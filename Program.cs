@@ -22,18 +22,6 @@ namespace BTD_Tests {
     class Btd {
 
         public string path;
-        public long zlibOffset;
-
-        //helpful helper variaables
-        public int cellsX;
-        public int cellsY;
-        public int lod3CellsX;
-        public int lod3CellsY;
-        public int lod2CellsX;
-        public int lod2CellsY;
-        public int lod1CellsX;
-        public int lod1CellsY;
-
 
         public int version;
         public float minHeight;  
@@ -53,20 +41,28 @@ namespace BTD_Tests {
         public uint[] gcvr;
         public ulong[] quadrantGcvrIds;
 
-        public ushort[] lod4Heights;
-        public ushort[] lod4Ltex;
-        public ushort[] lod4Vcol;
+        public ushort[] globalHeights;
+        public ushort[] globalLtex;
+        public ushort[] globalVcol;
 
-        public uint[] lod3Offsets;
-        public int[] lod3Sizes;
-        public uint[] lod2Offsets;
-        public int[] lod2Sizes;
-        public uint[] lod1Offsets;
-        public int[] lod1Sizes;
-        public uint[] lod0Offsets;
-        public int[] lod0Sizes;
+        public uint[][] blockOffsets;
+        public int[][] blockSizes;
+
         public uint[] gcvrOffsets;
         public int[] gcvrSizes;
+
+        public long zlibOffset;
+
+
+        //helpful helper variaables
+        public int cellsX;
+        public int cellsY;
+        public int[] blockCellsX;
+        public int[] blockCellsY;
+
+        //static
+        static int[] cellSizes = { 128, 64, 32, 16 };
+        static int[] blockCellCounts = { 1, 2, 4, 8 };
 
         public Btd(string path) {
             using(BinaryReader reader = new BinaryReader(File.OpenRead(path))) {
@@ -84,18 +80,14 @@ namespace BTD_Tests {
 
                 cellsX = maxX - minX + 1; //does this only work if max and min are different sign?
                 cellsY = maxY - minY + 1;
-                lod3CellsX = (cellsX + 7) / 8;
-                lod3CellsY = (cellsY + 7) / 8;
-                lod2CellsX = (cellsX + 3) / 4;
-                lod2CellsY = (cellsY + 3) / 4;
-                lod1CellsX = (cellsX + 1) / 2;
-                lod1CellsY = (cellsY + 1) / 2;
+                blockCellsX = new int[] { cellsX, (cellsX + 1) / 2, (cellsX + 3) / 4, (cellsX + 7) / 8 };
+                blockCellsY = new int[] { cellsY, (cellsY + 1) / 2, (cellsY + 3) / 4, (cellsY + 7) / 8 };
 
                 ltex = new uint[reader.ReadInt32()];
                 for(int i =  0; i < ltex.Length; i++) { ltex[i] = reader.ReadUInt32(); }
 
                 cellMinHeights = new float[cellsX * cellsY];
-                cellMaxHeights = new float[cellsY * cellsX];
+                cellMaxHeights = new float[cellMinHeights.Length];
                 for(int i = 0; i < cellMinHeights.Length; i++) {
                     cellMinHeights[i] = reader.ReadSingle();
                     cellMaxHeights[i] = reader.ReadSingle();
@@ -110,38 +102,41 @@ namespace BTD_Tests {
                 quadrantGcvrIds = new ulong[cellsX * 2 * cellsY * 2];
                 for(int i = 0; i < quadrantGcvrIds.Length; i++) quadrantGcvrIds[i] = reader.ReadUInt64();
 
-                lod4Heights = new ushort[cellsX * 8 * cellsY * 8];
-                for (int i = 0; i < lod4Heights.Length; i++) lod4Heights[i] = reader.ReadUInt16();
+                globalHeights = new ushort[cellsX * 8 * cellsY * 8];
+                for (int i = 0; i < globalHeights.Length; i++) globalHeights[i] = reader.ReadUInt16();
 
-                lod4Ltex = new ushort[cellsX * 8 * cellsY * 8];
-                for (int i = 0; i < lod4Ltex.Length; i++) lod4Ltex[i] = reader.ReadUInt16();
+                globalLtex = new ushort[cellsX * 8 * cellsY * 8];
+                for (int i = 0; i < globalLtex.Length; i++) globalLtex[i] = reader.ReadUInt16();
 
-                lod4Vcol = new ushort[cellsX * 8 * cellsY * 8];
-                for (int i = 0; i < lod4Vcol.Length; i++) lod4Vcol[i] = reader.ReadUInt16();
+                globalVcol = new ushort[cellsX * 8 * cellsY * 8];
+                for (int i = 0; i < globalVcol.Length; i++) globalVcol[i] = reader.ReadUInt16();
 
-                lod3Offsets = new uint[lod3CellsX * lod3CellsY * 2]; lod3Sizes = new int[lod3Offsets.Length];
-                for(int i = 0; i < lod3Offsets.Length; i++) {
-                    lod3Offsets[i] = reader.ReadUInt32();
-                    lod3Sizes[i] = reader.ReadInt32();
+                blockOffsets = new uint[4][];
+                blockSizes = new int[4][];
+
+                blockOffsets[3] = new uint[blockCellsX[3] * blockCellsY[3] * 2]; blockSizes[3] = new int[blockOffsets[3].Length];
+                for(int i = 0; i < blockOffsets[3].Length; i++) {
+                    blockOffsets[3][i] = reader.ReadUInt32();
+                    blockSizes[3][i] = reader.ReadInt32();
                 }
 
-                lod2Offsets = new uint[lod2CellsX * lod2CellsY * 2]; lod2Sizes = new int[lod2Offsets.Length];
-                for (int i = 0; i < lod2Offsets.Length; i++) {
-                    lod2Offsets[i] = reader.ReadUInt32();
-                    lod2Sizes[i] = reader.ReadInt32();
+                blockOffsets[2] = new uint[blockCellsX[2] * blockCellsY[2] * 2]; blockSizes[2] = new int[blockOffsets[2].Length];
+                for (int i = 0; i < blockOffsets[2].Length; i++) {
+                    blockOffsets[2][i] = reader.ReadUInt32();
+                    blockSizes[2][i] = reader.ReadInt32();
                 }
 
-                lod1Offsets = new uint[lod1CellsX * lod1CellsY]; lod1Sizes = new int[lod1Offsets.Length];
-                for (int i = 0; i < lod1Offsets.Length; i++) {
-                    lod1Offsets[i] = reader.ReadUInt32();
-                    lod1Sizes[i] = reader.ReadInt32();
+                blockOffsets[1] = new uint[blockCellsX[1] * blockCellsY[1]]; blockSizes[1] = new int[blockOffsets[1].Length];
+                for (int i = 0; i < blockOffsets[1].Length; i++) {
+                    blockOffsets[1][i] = reader.ReadUInt32();
+                    blockSizes[1][i] = reader.ReadInt32();
                 }
 
 
-                lod0Offsets = new uint[cellsX * cellsY]; lod0Sizes = new int[lod0Offsets.Length];
-                for (int i = 0; i < lod0Offsets.Length; i++) {
-                    lod0Offsets[i] = reader.ReadUInt32();
-                    lod0Sizes[i] = reader.ReadInt32();
+                blockOffsets[0] = new uint[cellsX * cellsY]; blockSizes[0] = new int[blockOffsets[0].Length];
+                for (int i = 0; i < blockOffsets[0].Length; i++) {
+                    blockOffsets[0][i] = reader.ReadUInt32();
+                    blockSizes[0][i] = reader.ReadInt32();
                 }
 
                 gcvrOffsets = new uint[cellsX * cellsY]; gcvrSizes = new int[gcvrOffsets.Length];
@@ -158,7 +153,9 @@ namespace BTD_Tests {
         //    ushort[] lod3Full = 
         //}
 
-        public ushort[] GetFullHeights(ushort[] prev, int blockCellCount, int cellSize) {
+        public ushort[] GetFullHeights(ushort[] prev, int level) {
+            int cellSize = cellSizes[level];
+            int blockCellCount = blockCellCounts[level];
             int blockSize = blockCellCount * cellSize;
 
 
@@ -176,25 +173,10 @@ namespace BTD_Tests {
             using (BinaryReader reader = new BinaryReader(File.OpenRead(path))) {
                 using Decompressor decompressor = new ZlibDecompressor();
                 for (int cellY = 0; cellY < cellsY; cellY += blockCellCount) {
-                    for (int cellX = 0; cellX < cellsX; cellX += blockCellCount) {
-                        //we should turn this stuff into arrays?
-                        int blocksX = blockCellCount switch {
-                            8 => lod3CellsX,
-                            4 => lod2CellsX
-                        };
-
-
-                        int zlibBlockIndex = (cellX / blockCellCount + cellY / blockCellCount * blocksX) * 2;
-                        uint offset = blockCellCount switch {
-                            8 => lod3Offsets[zlibBlockIndex],
-                            4 => lod2Offsets[zlibBlockIndex],
-                        };
-                        int size = blockCellCount switch {
-                            8 => lod3Sizes[zlibBlockIndex],
-                            4 => lod2Sizes[zlibBlockIndex],
-                        };
-                        reader.BaseStream.Seek(zlibOffset + offset, SeekOrigin.Begin);
-                        var status = decompressor.Decompress(reader.ReadBytes(size), blockSize * blockSize * 3, out var decompressed);
+                    for (int cellX = 0; cellX < cellsX; cellX += blockCellCount) {                    
+                        int zlibBlockIndex = (cellX / blockCellCount + cellY / blockCellCount * blockCellsX[level]) * 2;
+                        reader.BaseStream.Seek(zlibOffset + blockOffsets[level][zlibBlockIndex], SeekOrigin.Begin);
+                        var status = decompressor.Decompress(reader.ReadBytes(blockSizes[level][zlibBlockIndex]), blockSize * blockSize * 3, out var decompressed);
                         if (status != OperationStatus.Done) {
                             Console.WriteLine(status);
                             continue;
@@ -221,8 +203,8 @@ namespace BTD_Tests {
         }
 
         public void WriteLod2Full() {
-            ushort[] lod3Heights = GetFullHeights(lod4Heights, 8, 16);
-            ushort[] lod2Heights = GetFullHeights(lod3Heights, 4, 32);
+            ushort[] lod3Heights = GetFullHeights(globalHeights, 3);
+            ushort[] lod2Heights = GetFullHeights(lod3Heights, 2);
 
             var span = MemoryMarshal.AsBytes(lod2Heights.AsSpan());
             MagickImage image = new MagickImage();
@@ -238,7 +220,7 @@ namespace BTD_Tests {
 
             int blockCellCount = 8;
             int cellSize = 16;
-            ushort[] lod3Heights = GetFullHeights(lod4Heights, blockCellCount, cellSize);
+            ushort[] lod3Heights = GetFullHeights(globalHeights, 3);
             
 
             var span = MemoryMarshal.AsBytes(lod3Heights.AsSpan());
@@ -259,9 +241,9 @@ namespace BTD_Tests {
 
                 //return;
                 
-                reader.BaseStream.Seek(zlibOffset + lod3Offsets[index * 2], SeekOrigin.Begin);
+                reader.BaseStream.Seek(zlibOffset + blockOffsets[3][index * 2], SeekOrigin.Begin);
                 using(Decompressor decompressor = new ZlibDecompressor()) {
-                    var status = decompressor.Decompress(reader.ReadBytes(lod3Sizes[index * 2]), 49152, out var decompressed);
+                    var status = decompressor.Decompress(reader.ReadBytes(blockSizes[3][index * 2]), 49152, out var decompressed);
                     //if (status != OperationStatus.Done) {
                     //    Console.WriteLine(status);
                     //} else {
@@ -296,14 +278,14 @@ namespace BTD_Tests {
 
         public void WriteLod4Heights() {
             MagickImage heights = new MagickImage();
-            var span = MemoryMarshal.AsBytes(lod4Heights.AsSpan());
+            var span = MemoryMarshal.AsBytes(globalHeights.AsSpan());
             heights.Read(span, new MagickReadSettings() { Width = cellsX * 8, Height = cellsY * 8, Depth = 16, Format = MagickFormat.Gray });
             heights.Write("test.png");
         }
 
         public void WriteLod4Ltex() {
             MagickImage heights = new MagickImage();
-            var span = MemoryMarshal.AsBytes(lod4Ltex.AsSpan());
+            var span = MemoryMarshal.AsBytes(globalLtex.AsSpan());
             heights.Read(span, new MagickReadSettings() { Width = cellsX * 8, Height = cellsY * 8, Depth = 16, Format = MagickFormat.Gray });
             heights.Write("ltex.png");
         }
@@ -311,10 +293,10 @@ namespace BTD_Tests {
 
         public void WriteLod4Vcol() {
             byte[] terrainColors = new byte[cellsX * 8 * cellsY * 8 * 3];
-            for(int i = 0; i < lod4Vcol.Length; i++) {
-                terrainColors[i * 3] = (byte)((lod4Vcol[i] & 0b11111) * 8);
-                terrainColors[i * 3 + 1] = (byte)(((lod4Vcol[i] >> 5) & 0b11111) * 8);
-                terrainColors[i * 3 + 2] = (byte)(((lod4Vcol[i] >> 10) & 0b11111) * 8);
+            for(int i = 0; i < globalVcol.Length; i++) {
+                terrainColors[i * 3] = (byte)((globalVcol[i] & 0b11111) * 8);
+                terrainColors[i * 3 + 1] = (byte)(((globalVcol[i] >> 5) & 0b11111) * 8);
+                terrainColors[i * 3 + 2] = (byte)(((globalVcol[i] >> 10) & 0b11111) * 8);
             }
             MagickImage heights = new MagickImage();
             heights.Read(terrainColors, new MagickReadSettings() { Width = cellsX * 8, Height = cellsY * 8, Depth = 8, Format = MagickFormat.Bgr });
