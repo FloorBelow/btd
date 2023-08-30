@@ -2,6 +2,7 @@
 using System.Runtime.InteropServices;
 using LibDeflate;
 using ImageMagick;
+using System.Buffers;
 
 namespace BTD_Tests {
     internal class Program {
@@ -9,7 +10,9 @@ namespace BTD_Tests {
             Btd btd = new Btd(@"F:\SteamLibrary\steamapps\common\Fallout76\Data\Terrain\Appalachia.btd");
             Console.WriteLine($"{btd.cellsX}x{btd.cellsY}");
             //btd.WriteLod4Ltex();
-            btd.WriteLod4Vcol();
+            //btd.WriteLod4Vcol();
+
+            for(int i = 0; i < btd.lod3Offsets.Length / 2; i++) btd.WriteLod3Height(i);
             Console.WriteLine("DONE");
         }
     }
@@ -47,15 +50,15 @@ namespace BTD_Tests {
         public ushort[] lod4Vcol;
 
         public uint[] lod3Offsets;
-        public uint[] lod3Sizes;
+        public int[] lod3Sizes;
         public uint[] lod2Offsets;
-        public uint[] lod2Sizes;
+        public int[] lod2Sizes;
         public uint[] lod1Offsets;
-        public uint[] lod1Sizes;
+        public int[] lod1Sizes;
         public uint[] lod0Offsets;
-        public uint[] lod0Sizes;
+        public int[] lod0Sizes;
         public uint[] gcvrOffsets;
-        public uint[] gcvrSizes;
+        public int[] gcvrSizes;
 
         public Btd(string path) {
             using(BinaryReader reader = new BinaryReader(File.OpenRead(path))) {
@@ -71,7 +74,7 @@ namespace BTD_Tests {
                 maxX = reader.ReadInt32(); 
                 maxY = reader.ReadInt32();
 
-                cellsX = maxX - minX + 1; //note this only works if max and min are different sign?
+                cellsX = maxX - minX + 1; //does this only work if max and min are different sign?
                 cellsY = maxY - minY + 1;
 
                 ltex = new uint[reader.ReadInt32()];
@@ -102,13 +105,80 @@ namespace BTD_Tests {
                 lod4Vcol = new ushort[cellsX * 8 * cellsY * 8];
                 for (int i = 0; i < lod4Vcol.Length; i++) lod4Vcol[i] = reader.ReadUInt16();
 
-                lod3Offsets = new uint[(cellsX + 7) / 8 * (cellsY + 7) / 8 * 2]; lod3Sizes = new uint[lod3Offsets.Length];
-                lod2Offsets = new uint[(cellsX + 3) / 4 * (cellsY + 3) / 4 * 2]; lod2Sizes = new uint[lod2Offsets.Length];
-                lod1Offsets = new uint[(cellsX + 1) / 2 * (cellsY + 1) / 2]; lod2Sizes = new uint[lod1Offsets.Length];
-                lod0Offsets = new uint[cellsX * cellsY]; lod0Sizes = new uint[lod0Offsets.Length];
-                gcvrOffsets = new uint[cellsX * cellsY]; gcvrSizes = new uint[gcvrOffsets.Length];
+                lod3Offsets = new uint[(cellsX + 7) / 8 * (cellsY + 7) / 8 * 2]; lod3Sizes = new int[lod3Offsets.Length];
+                for(int i = 0; i < lod3Offsets.Length; i++) {
+                    lod3Offsets[i] = reader.ReadUInt32();
+                    lod3Sizes[i] = reader.ReadInt32();
+                }
+
+                lod2Offsets = new uint[(cellsX + 3) / 4 * (cellsY + 3) / 4 * 2]; lod2Sizes = new int[lod2Offsets.Length];
+                for (int i = 0; i < lod2Offsets.Length; i++) {
+                    lod2Offsets[i] = reader.ReadUInt32();
+                    lod2Sizes[i] = reader.ReadInt32();
+                }
+
+                lod1Offsets = new uint[(cellsX + 1) / 2 * (cellsY + 1) / 2]; lod1Sizes = new int[lod1Offsets.Length];
+                for (int i = 0; i < lod1Offsets.Length; i++) {
+                    lod1Offsets[i] = reader.ReadUInt32();
+                    lod1Sizes[i] = reader.ReadInt32();
+                }
+
+
+                lod0Offsets = new uint[cellsX * cellsY]; lod0Sizes = new int[lod0Offsets.Length];
+                for (int i = 0; i < lod0Offsets.Length; i++) {
+                    lod0Offsets[i] = reader.ReadUInt32();
+                    lod0Sizes[i] = reader.ReadInt32();
+                }
+
+                gcvrOffsets = new uint[cellsX * cellsY]; gcvrSizes = new int[gcvrOffsets.Length];
+                for (int i = 0; i < gcvrOffsets.Length; i++) {
+                    gcvrOffsets[i] = reader.ReadUInt32();
+                    gcvrSizes[i] = reader.ReadInt32();
+                }
 
                 zlibOffset = reader.BaseStream.Position;
+            }
+        }
+
+        public void WriteLod3Height(int index) {
+            using (BinaryReader reader = new BinaryReader(File.OpenRead(path))) {
+                //reader.BaseStream.Seek(zlibOffset + lod3Offsets[0], SeekOrigin.Begin);
+                //File.WriteAllBytes("test.data", reader.ReadBytes(lod3Sizes[0]));
+
+                //return;
+                
+                reader.BaseStream.Seek(zlibOffset + lod3Offsets[index * 2], SeekOrigin.Begin);
+                using(Decompressor decompressor = new ZlibDecompressor()) {
+                    var status = decompressor.Decompress(reader.ReadBytes(lod3Sizes[index * 2]), 49152, out var decompressed);
+                    //if (status != OperationStatus.Done) {
+                    //    Console.WriteLine(status);
+                    //} else {
+                    //    File.WriteAllBytes("test.data", decompressed.Memory.ToArray());
+                    //}
+
+                    using(BinaryReader heightReader = new BinaryReader(new MemoryStream(decompressed.Memory.ToArray()))) {
+                        ushort[] heights = new ushort[128 * 128];
+                        for(int y = 0; y < 128; y+=2) {
+                            for(int x = 0; x < 128; x+=2) {
+                                heights[x + y * 128 + 1] = heightReader.ReadUInt16();
+                                heights[x + y * 128] = heights[x + y * 128 + 1]; //test
+                            }
+                            for (int x = 0; x < 128; x += 2) {
+                                heights[x + y * 128 + 128] = heightReader.ReadUInt16();
+                                heights[x + y * 128 + 129] = heightReader.ReadUInt16();
+                            }
+
+                        }
+
+                        var span = MemoryMarshal.AsBytes(heights.AsSpan());
+                        MagickImage image = new MagickImage();
+                        image.Read(span, new MagickReadSettings() { Width = 128, Height = 128, Depth = 16, Format = MagickFormat.Gray });
+                        string filename = $"lod3height_{index}.png";
+                        Console.WriteLine(filename);
+                        image.Write(filename);
+                    }
+                }
+
             }
         }
 
