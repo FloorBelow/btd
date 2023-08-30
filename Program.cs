@@ -1,9 +1,7 @@
-﻿using System;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using LibDeflate;
 using ImageMagick;
 using System.Buffers;
-using System.Reflection;
 
 namespace BTD_Tests {
     internal class Program {
@@ -13,7 +11,7 @@ namespace BTD_Tests {
             //btd.WriteLod4Ltex();
             //btd.WriteLod4Vcol();
 
-            btd.WriteLod3Full();
+            btd.WriteLod2Full();
 
             //for(int i = 0; i < btd.lod3Offsets.Length / 2; i++) btd.WriteLod3Height(i);
             Console.WriteLine("DONE");
@@ -156,28 +154,47 @@ namespace BTD_Tests {
             }
         }
 
-        public void WriteLod3Full() {
-            int blockCellCount = 8;
-            int cellSize = 16;
+        //public void WriteLod2Full() {
+        //    ushort[] lod3Full = 
+        //}
+
+        public ushort[] GetFullHeights(ushort[] prev, int blockCellCount, int cellSize) {
             int blockSize = blockCellCount * cellSize;
+
 
             int fullWidth = cellsX * cellSize;
             int fullHeight = cellsY * cellSize;
+
             ushort[] fullHeights = new ushort[fullWidth * fullHeight];
-            for(int y = 0; y < fullHeight; y+=2) {
-                for(int x = 0; x < fullWidth; x+=2) {
-                    fullHeights[x + y * fullWidth] = lod4Heights[x / 2 + y / 2 * fullWidth / 2];
+            //take the top-left of each 2x2 block from prev
+            for (int y = 0; y < fullHeight; y += 2) {
+                for (int x = 0; x < fullWidth; x += 2) {
+                    fullHeights[x + y * fullWidth] = prev[x / 2 + y / 2 * fullWidth / 2];
                 }
             }
 
             using (BinaryReader reader = new BinaryReader(File.OpenRead(path))) {
                 using Decompressor decompressor = new ZlibDecompressor();
-                for(int cellY = 0; cellY < cellsY; cellY += blockCellCount) {
+                for (int cellY = 0; cellY < cellsY; cellY += blockCellCount) {
                     for (int cellX = 0; cellX < cellsX; cellX += blockCellCount) {
-                        int zlibBlockIndex = (cellX / blockCellCount + cellY / blockCellCount * lod3CellsX) * 2;
+                        //we should turn this stuff into arrays?
+                        int blocksX = blockCellCount switch {
+                            8 => lod3CellsX,
+                            4 => lod2CellsX
+                        };
 
-                        reader.BaseStream.Seek(zlibOffset + lod3Offsets[zlibBlockIndex], SeekOrigin.Begin);
-                        var status = decompressor.Decompress(reader.ReadBytes(lod3Sizes[zlibBlockIndex]), blockSize * blockSize * 3, out var decompressed);
+
+                        int zlibBlockIndex = (cellX / blockCellCount + cellY / blockCellCount * blocksX) * 2;
+                        uint offset = blockCellCount switch {
+                            8 => lod3Offsets[zlibBlockIndex],
+                            4 => lod2Offsets[zlibBlockIndex],
+                        };
+                        int size = blockCellCount switch {
+                            8 => lod3Sizes[zlibBlockIndex],
+                            4 => lod2Sizes[zlibBlockIndex],
+                        };
+                        reader.BaseStream.Seek(zlibOffset + offset, SeekOrigin.Begin);
+                        var status = decompressor.Decompress(reader.ReadBytes(size), blockSize * blockSize * 3, out var decompressed);
                         if (status != OperationStatus.Done) {
                             Console.WriteLine(status);
                             continue;
@@ -200,13 +217,36 @@ namespace BTD_Tests {
                     }
                 }
             }
+            return fullHeights;
+        }
 
+        public void WriteLod2Full() {
+            ushort[] lod3Heights = GetFullHeights(lod4Heights, 8, 16);
+            ushort[] lod2Heights = GetFullHeights(lod3Heights, 4, 32);
 
-            var span = MemoryMarshal.AsBytes(fullHeights.AsSpan());
+            var span = MemoryMarshal.AsBytes(lod2Heights.AsSpan());
             MagickImage image = new MagickImage();
-            image.Read(span, new MagickReadSettings() { Width = fullWidth, Height = fullHeight, Depth = 16, Format = MagickFormat.Gray });
+            image.Read(span, new MagickReadSettings() { Width = cellsX * 32, Height = cellsY * 32, Depth = 16, Format = MagickFormat.Gray });
+            string filename = $"lod2heights.png";
+            Console.WriteLine(filename);
+            image.Quality = 0;
+            image.Write(filename);
+
+        }
+
+        public void WriteLod3Full() {
+
+            int blockCellCount = 8;
+            int cellSize = 16;
+            ushort[] lod3Heights = GetFullHeights(lod4Heights, blockCellCount, cellSize);
+            
+
+            var span = MemoryMarshal.AsBytes(lod3Heights.AsSpan());
+            MagickImage image = new MagickImage();
+            image.Read(span, new MagickReadSettings() { Width = cellsX * cellSize, Height = cellsY * cellSize, Depth = 16, Format = MagickFormat.Gray });
             string filename = $"lod3heights.png";
             Console.WriteLine(filename);
+            image.Quality = 0;
             image.Write(filename);
 
 
