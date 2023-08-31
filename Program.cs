@@ -8,13 +8,10 @@ namespace BTD_Tests {
         static void Main(string[] args) {
             Btd btd = new Btd(@"F:\SteamLibrary\steamapps\common\Fallout76\Data\Terrain\Appalachia.btd");
             Console.WriteLine($"{btd.cellsX}x{btd.cellsY}");
-            //btd.WriteLod4Ltex();
-            //btd.WriteLod4Vcol();
 
-            btd.WriteHeights(4);
-            btd.WriteHeights(3);
-            btd.WriteHeights(2);
-
+            btd.Export(2, Btd.TerrainMode.height);
+            btd.Export(2, Btd.TerrainMode.ltex);
+            btd.Export(2, Btd.TerrainMode.color);
 
             //for(int i = 0; i < btd.lod3Offsets.Length / 2; i++) btd.WriteLod3Height(i);
             Console.WriteLine("DONE");
@@ -46,7 +43,7 @@ namespace BTD_Tests {
 
         public ushort[] globalHeights;
         public ushort[] globalLtex;
-        public ushort[] globalVcol;
+        public ushort[] globalVclr;
 
         public uint[][] blockOffsets;
         public int[][] blockSizes;
@@ -111,8 +108,8 @@ namespace BTD_Tests {
                 globalLtex = new ushort[cellsX * 8 * cellsY * 8];
                 for (int i = 0; i < globalLtex.Length; i++) globalLtex[i] = reader.ReadUInt16();
 
-                globalVcol = new ushort[cellsX * 8 * cellsY * 8];
-                for (int i = 0; i < globalVcol.Length; i++) globalVcol[i] = reader.ReadUInt16();
+                globalVclr = new ushort[cellsX * 8 * cellsY * 8];
+                for (int i = 0; i < globalVclr.Length; i++) globalVclr[i] = reader.ReadUInt16();
 
                 blockOffsets = new uint[4][];
                 blockSizes = new int[4][];
@@ -151,13 +148,21 @@ namespace BTD_Tests {
                 zlibOffset = reader.BaseStream.Position;
             }
         }
+        
+        public enum TerrainMode {
+            height,
+            ltex,
+            color
+        }
 
-        public ushort[] GetHeightsForLevel(ushort[] prev, int level) {
+        public ushort[] GetDataForLevel(ushort[] prev, int level, TerrainMode mode = TerrainMode.height) {
             Console.WriteLine($"Loading level {level}");
             int cellSize = cellSizes[level];
             int blockCellCount = blockCellCounts[level];
             int blockSize = blockCellCount * cellSize;
 
+            int shortsOffset = mode == TerrainMode.ltex ? blockSize * blockSize * 3 / 4 : 0;
+            int uncompressedBlockSize = mode == TerrainMode.color  ? blockSize * blockSize * 2 : blockSize * blockSize * 3;
 
 
             int fullWidth = cellsX * cellSize;
@@ -176,9 +181,13 @@ namespace BTD_Tests {
                 for (int cellY = 0; cellY < cellsY; cellY += blockCellCount) {
                     for (int cellX = 0; cellX < cellsX; cellX += blockCellCount) {                    
                         int zlibBlockIndex = (cellX / blockCellCount + cellY / blockCellCount * blockCellsX[level]);
-                        if (level > 1) zlibBlockIndex *= 2;
+                        if (level > 1) {
+                            zlibBlockIndex *= 2;
+                            if (mode == TerrainMode.color) zlibBlockIndex += 1;
+                        }
+
                         reader.BaseStream.Seek(zlibOffset + blockOffsets[level][zlibBlockIndex], SeekOrigin.Begin);
-                        var status = decompressor.Decompress(reader.ReadBytes(blockSizes[level][zlibBlockIndex]), blockSize * blockSize * 3, out var decompressed);
+                        var status = decompressor.Decompress(reader.ReadBytes(blockSizes[level][zlibBlockIndex]), uncompressedBlockSize, out var decompressed);
                         if (status != OperationStatus.Done) {
                             Console.WriteLine(status);
                             continue;
@@ -191,11 +200,11 @@ namespace BTD_Tests {
                         int i = 0;
                         for (int y = 0; y < blockHeight; y += 2) {
                             for (int x = 0; x < blockWidth; x += 2) {
-                                fullHeights[cellX * cellSize + cellY * fullWidth * cellSize + x + 1 + y * fullWidth] = blockShorts[x / 2 + y / 2 * 192];
+                                fullHeights[cellX * cellSize + cellY * fullWidth * cellSize + x + 1 + y * fullWidth] = blockShorts[x / 2 + y / 2 * 192 + shortsOffset];
                             }
                             for (int x = 0; x < blockWidth; x += 2) {
-                                fullHeights[cellX * cellSize + cellY * fullWidth * cellSize + x + y * fullWidth + fullWidth] = blockShorts[x + y / 2 * 192 + 64];
-                                fullHeights[cellX * cellSize + cellY * fullWidth * cellSize + x + 1 + y * fullWidth + fullWidth] = blockShorts[x + 1 + y / 2 * 192 + 64];
+                                fullHeights[cellX * cellSize + cellY * fullWidth * cellSize + x + y * fullWidth + fullWidth] = blockShorts[x + y / 2 * 192 + 64 + shortsOffset];
+                                fullHeights[cellX * cellSize + cellY * fullWidth * cellSize + x + 1 + y * fullWidth + fullWidth] = blockShorts[x + 1 + y / 2 * 192 + 64 + shortsOffset];
                             }
                         }
                     }
@@ -204,19 +213,47 @@ namespace BTD_Tests {
             return fullHeights;
         }
 
-        public void WriteHeights(int level) {
-            ushort[] heights = globalHeights;
-            for(int i = 3; i >= level; i--) {
-                heights = GetHeightsForLevel(heights, i);
+        public void Export(int level, TerrainMode mode = TerrainMode.height) {
+
+            if(level < 2 && mode == TerrainMode.color) {
+                Console.WriteLine("Color only available for lod 2 and up");
+                level = 2;
             }
 
-            var span = MemoryMarshal.AsBytes(heights.AsSpan());
-            MagickImage image = new MagickImage();
-            image.Read(span, new MagickReadSettings() { Width = cellsX * cellSizes[level], Height = cellsY * cellSizes[level], Depth = 16, Format = MagickFormat.Gray });
-            string filename = $"lod{level}_heights.png";
-            Console.WriteLine(filename);
-            image.Quality = 0;
-            image.Write(filename);
+            ushort[] heights = mode switch {
+                TerrainMode.height => globalHeights,
+                TerrainMode.ltex => globalLtex,
+                TerrainMode.color => globalVclr
+            };
+            for(int i = 3; i >= level; i--) {
+                heights = GetDataForLevel(heights, i, mode);
+            }
+
+            
+
+            if (mode == TerrainMode.color) {
+                byte[] colors = new byte[heights.Length * 3];
+
+                for (int i = 0; i < heights.Length; i++) {
+                    colors[i * 3] = (byte)((heights[i] & 0b11111) * 8);
+                    colors[i * 3 + 1] = (byte)(((heights[i] >> 5) & 0b11111) * 8);
+                    colors[i * 3 + 2] = (byte)(((heights[i] >> 10) & 0b11111) * 8);
+                }
+                MagickImage image = new MagickImage();
+                image.Read(colors, new MagickReadSettings() { Width = cellsX * cellSizes[level], Height = cellsY * cellSizes[level], Depth = 8, Format = MagickFormat.Bgr });
+                string filename = $"lod{level}_vcol.png";
+                Console.WriteLine(filename);
+                image.Quality = 0;
+                image.Write(filename);
+            } else {
+                var span = MemoryMarshal.AsBytes(heights.AsSpan());
+                MagickImage image = new MagickImage();
+                image.Read(span, new MagickReadSettings() { Width = cellsX * cellSizes[level], Height = cellsY * cellSizes[level], Depth = 16, Format = MagickFormat.Gray });
+                string filename = mode == TerrainMode.ltex ? $"lod{level}_ltex.png" : $"lod{level}_heights.png";
+                Console.WriteLine(filename);
+                image.Quality = 0;
+                image.Write(filename);
+            }
         }
 
         public void WriteLod3Height(int index) {
@@ -266,10 +303,10 @@ namespace BTD_Tests {
 
         public void WriteLod4Vcol() {
             byte[] terrainColors = new byte[cellsX * 8 * cellsY * 8 * 3];
-            for(int i = 0; i < globalVcol.Length; i++) {
-                terrainColors[i * 3] = (byte)((globalVcol[i] & 0b11111) * 8);
-                terrainColors[i * 3 + 1] = (byte)(((globalVcol[i] >> 5) & 0b11111) * 8);
-                terrainColors[i * 3 + 2] = (byte)(((globalVcol[i] >> 10) & 0b11111) * 8);
+            for(int i = 0; i < globalVclr.Length; i++) {
+                terrainColors[i * 3] = (byte)((globalVclr[i] & 0b11111) * 8);
+                terrainColors[i * 3 + 1] = (byte)(((globalVclr[i] >> 5) & 0b11111) * 8);
+                terrainColors[i * 3 + 2] = (byte)(((globalVclr[i] >> 10) & 0b11111) * 8);
             }
             MagickImage heights = new MagickImage();
             heights.Read(terrainColors, new MagickReadSettings() { Width = cellsX * 8, Height = cellsY * 8, Depth = 8, Format = MagickFormat.Bgr });
