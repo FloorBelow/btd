@@ -5,6 +5,8 @@ using System.Runtime.InteropServices;
 
 class BtdStarfield {
 
+    const int uncompressedBlockSize = 128 * 128 * 4;
+
     public string path;
 
     public int version;
@@ -114,41 +116,29 @@ class BtdStarfield {
 
     public enum TerrainMode {
         height,
-        ltex,
-        color
+        ltex
     }
 
-    public ushort[] GetDataForLevel(ushort[] prev, int level, TerrainMode mode = TerrainMode.height) {
-        Console.WriteLine($"Loading level {level}");
+    public void Export(int level, TerrainMode mode = TerrainMode.height, string name = "lod") {
         int cellSize = cellSizes[level];
         int blockCellCount = blockCellCounts[level];
         int blockSize = blockCellCount * cellSize;
 
         int shortsOffset = mode == TerrainMode.ltex ? blockSize * blockSize * 3 / 4 : 0;
-        int uncompressedBlockSize = mode == TerrainMode.color ? blockSize * blockSize * 2 : blockSize * blockSize * 3;
+        
 
 
         int fullWidth = cellsX * cellSize;
         int fullHeight = cellsY * cellSize;
 
         ushort[] fullHeights = new ushort[fullWidth * fullHeight];
-        //take the top-left of each 2x2 block from prev
-        for (int y = 0; y < fullHeight; y += 2) {
-            for (int x = 0; x < fullWidth; x += 2) {
-                fullHeights[x + y * fullWidth] = prev[x / 2 + y / 2 * fullWidth / 2];
-            }
-        }
+
 
         using (BinaryReader reader = new BinaryReader(File.OpenRead(path))) {
             using Decompressor decompressor = new ZlibDecompressor();
             for (int cellY = 0; cellY < cellsY; cellY += blockCellCount) {
                 for (int cellX = 0; cellX < cellsX; cellX += blockCellCount) {
                     int zlibBlockIndex = (cellX / blockCellCount + cellY / blockCellCount * blockCellsX[level]);
-                    if (level > 1) {
-                        zlibBlockIndex *= 2;
-                        if (mode == TerrainMode.color) zlibBlockIndex += 1;
-                    }
-
                     reader.BaseStream.Seek(zlibOffset + blockOffsets[level][zlibBlockIndex], SeekOrigin.Begin);
                     var status = decompressor.Decompress(reader.ReadBytes(blockSizes[level][zlibBlockIndex]), uncompressedBlockSize, out var decompressed);
                     if (status != OperationStatus.Done) {
@@ -159,63 +149,24 @@ class BtdStarfield {
                     int blockWidth = cellX + blockCellCount > cellsX ? (cellsX % blockCellCount) * cellSize : blockSize;
                     int blockHeight = cellY + blockCellCount > cellsY ? (cellsY % blockCellCount) * cellSize : blockSize;
 
-
-                    int i = 0;
-                    for (int y = 0; y < blockHeight; y += 2) {
-                        for (int x = 0; x < blockWidth; x += 2) {
-                            fullHeights[cellX * cellSize + cellY * fullWidth * cellSize + x + 1 + y * fullWidth] = blockShorts[x / 2 + y / 2 * 192 + shortsOffset];
-                        }
-                        for (int x = 0; x < blockWidth; x += 2) {
-                            fullHeights[cellX * cellSize + cellY * fullWidth * cellSize + x + y * fullWidth + fullWidth] = blockShorts[x + y / 2 * 192 + 64 + shortsOffset];
-                            fullHeights[cellX * cellSize + cellY * fullWidth * cellSize + x + 1 + y * fullWidth + fullWidth] = blockShorts[x + 1 + y / 2 * 192 + 64 + shortsOffset];
+                    for (int y = 0; y < blockHeight; y++) {
+                        for (int x = 0; x < blockWidth; x++) {
+                            fullHeights[cellX * cellSize + cellY * fullWidth * cellSize + x + y * fullWidth] = blockShorts[x + y * 128 + shortsOffset];
                         }
                     }
                 }
             }
         }
-        return fullHeights;
-    }
 
-    public void Export(int level, TerrainMode mode = TerrainMode.height) {
-
-        if (level < 2 && mode == TerrainMode.color) {
-            Console.WriteLine("Color only available for lod 2 and up");
-            level = 2;
-        }
-
-        ushort[] heights = mode switch {
-            TerrainMode.height => globalHeights,
-            TerrainMode.ltex => globalLtex
-        };
-        for (int i = 3; i >= level; i--) {
-            heights = GetDataForLevel(heights, i, mode);
-        }
+        var span = MemoryMarshal.AsBytes(fullHeights.AsSpan());
+        MagickImage image = new MagickImage();
+        image.Read(span, new MagickReadSettings() { Width = cellsX * cellSizes[level], Height = cellsY * cellSizes[level], Depth = 16, Format = MagickFormat.Gray });
+        string filename = mode == TerrainMode.ltex ? $"{name}_ltex_{level}.png" : $"{name}_height_{level}.png";
+        Console.WriteLine(filename);
+        image.Quality = 0;
+        image.Write(filename);
 
 
-
-        if (mode == TerrainMode.color) {
-            byte[] colors = new byte[heights.Length * 3];
-
-            for (int i = 0; i < heights.Length; i++) {
-                colors[i * 3] = (byte)((heights[i] & 0b11111) * 8);
-                colors[i * 3 + 1] = (byte)(((heights[i] >> 5) & 0b11111) * 8);
-                colors[i * 3 + 2] = (byte)(((heights[i] >> 10) & 0b11111) * 8);
-            }
-            MagickImage image = new MagickImage();
-            image.Read(colors, new MagickReadSettings() { Width = cellsX * cellSizes[level], Height = cellsY * cellSizes[level], Depth = 8, Format = MagickFormat.Bgr });
-            string filename = $"lod{level}_vcol.png";
-            Console.WriteLine(filename);
-            image.Quality = 0;
-            image.Write(filename);
-        } else {
-            var span = MemoryMarshal.AsBytes(heights.AsSpan());
-            MagickImage image = new MagickImage();
-            image.Read(span, new MagickReadSettings() { Width = cellsX * cellSizes[level], Height = cellsY * cellSizes[level], Depth = 16, Format = MagickFormat.Gray });
-            string filename = mode == TerrainMode.ltex ? $"lod{level}_ltex.png" : $"lod{level}_heights.png";
-            Console.WriteLine(filename);
-            image.Quality = 0;
-            image.Write(filename);
-        }
     }
 
     public void DumpZlibBlocks() {
@@ -241,42 +192,6 @@ class BtdStarfield {
         }
     }
 
-    public void WriteLod3Height(int index) {
-        using (BinaryReader reader = new BinaryReader(File.OpenRead(path))) {
-            reader.BaseStream.Seek(zlibOffset + blockOffsets[3][index * 2], SeekOrigin.Begin);
-            using (Decompressor decompressor = new ZlibDecompressor()) {
-                var status = decompressor.Decompress(reader.ReadBytes(blockSizes[3][index * 2]), 49152, out var decompressed);
-                //if (status != OperationStatus.Done) {
-                //    Console.WriteLine(status);
-                //} else {
-                //    File.WriteAllBytes("test.data", decompressed.Memory.ToArray());
-                //}
-
-                using (BinaryReader heightReader = new BinaryReader(new MemoryStream(decompressed.Memory.ToArray()))) {
-                    ushort[] heights = new ushort[128 * 128];
-                    for (int y = 0; y < 128; y += 2) {
-                        for (int x = 0; x < 128; x += 2) {
-                            heights[x + y * 128 + 1] = heightReader.ReadUInt16();
-                            heights[x + y * 128] = heights[x + y * 128 + 1]; //test
-                        }
-                        for (int x = 0; x < 128; x += 2) {
-                            heights[x + y * 128 + 128] = heightReader.ReadUInt16();
-                            heights[x + y * 128 + 129] = heightReader.ReadUInt16();
-                        }
-
-                    }
-
-                    var span = MemoryMarshal.AsBytes(heights.AsSpan());
-                    MagickImage image = new MagickImage();
-                    image.Read(span, new MagickReadSettings() { Width = 128, Height = 128, Depth = 16, Format = MagickFormat.Gray });
-                    string filename = $"lod3height_{index}.png";
-                    Console.WriteLine(filename);
-                    image.Write(filename);
-                }
-            }
-
-        }
-    }
 
     public void WriteLod4Ltex() {
         MagickImage heights = new MagickImage();
