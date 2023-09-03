@@ -6,6 +6,10 @@ using System.Buffers;
 namespace BTD_Tests {
     internal class Program {
         static void Main(string[] args) {
+            BtdStarfield btd = new BtdStarfield(@"F:\Extracted\Starfield\terrain\canyonssharplarge1k\canyonssharplarge1kinnercurve01.btd");
+            btd.DumpZlibBlocks();
+
+            /*
             Btd btd = new Btd(@"F:\SteamLibrary\steamapps\common\Fallout76\Data\Terrain\Appalachia.btd");
             Console.WriteLine($"{btd.cellsX}x{btd.cellsY}");
 
@@ -15,6 +19,7 @@ namespace BTD_Tests {
 
             //for(int i = 0; i < btd.lod3Offsets.Length / 2; i++) btd.WriteLod3Height(i);
             Console.WriteLine("DONE");
+            */
         }
     }
 
