@@ -6,7 +6,15 @@ using System.Buffers;
 namespace BTD_Tests {
     internal class Program {
         static void Main(string[] args) {
-            foreach(string path in Directory.EnumerateFiles(@"F:\Extracted\Starfield\terrain", "*.btd", SearchOption.AllDirectories)) {
+            foreach(string path in Directory.EnumerateFiles(@"E:\Extracted\Starfield\planetdata\biomemaps\", "*.biom")) {
+                //Biom biom = new Biom(@"E:\Extracted\Starfield\planetdata\biomemaps\nesoi.biom");
+                Biom biom = new Biom(path);
+                biom.SaveBiomeMap();
+
+            }
+            return;
+
+            foreach (string path in Directory.EnumerateFiles(@"F:\Extracted\Starfield\terrain", "*.btd", SearchOption.AllDirectories)) {
                 BtdStarfield btd = new BtdStarfield(path);
                 btd.Export(0, BtdStarfield.TerrainMode.height, Path.GetFileName(path));
             }
