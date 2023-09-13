@@ -28,7 +28,7 @@ class BtdStarfield {
     public ushort[] globalLtex;
 
     public uint[][] blockOffsets;
-    public int[][] blockSizes;
+    public uint[][] blockSizes;
 
 
     public long zlibOffset;
@@ -49,8 +49,8 @@ class BtdStarfield {
             this.path = path;
             string magic = new string(reader.ReadChars(4)); if (magic != "BTDB") throw new Exception("MAGIC WRONG " + magic);
             version = reader.ReadInt32();
-            minHeight = reader.ReadInt32();
-            maxHeight = reader.ReadInt32();
+            minHeight = reader.ReadSingle();
+            maxHeight = reader.ReadSingle();
             sizeX = reader.ReadInt32();
             sizeY = reader.ReadInt32();
             minX = reader.ReadInt32();
@@ -83,31 +83,31 @@ class BtdStarfield {
             for (int i = 0; i < globalLtex.Length; i++) globalLtex[i] = reader.ReadUInt16();
 
             blockOffsets = new uint[4][];
-            blockSizes = new int[4][];
+            blockSizes = new uint[4][];
 
-            blockOffsets[3] = new uint[blockCellsX[3] * blockCellsY[3]]; blockSizes[3] = new int[blockOffsets[3].Length];
+            blockOffsets[3] = new uint[blockCellsX[3] * blockCellsY[3]]; blockSizes[3] = new uint[blockOffsets[3].Length];
             for (int i = 0; i < blockOffsets[3].Length; i++) {
                 blockOffsets[3][i] = reader.ReadUInt32();
-                blockSizes[3][i] = reader.ReadInt32();
+                blockSizes[3][i] = reader.ReadUInt32();
             }
 
-            blockOffsets[2] = new uint[blockCellsX[2] * blockCellsY[2]]; blockSizes[2] = new int[blockOffsets[2].Length];
+            blockOffsets[2] = new uint[blockCellsX[2] * blockCellsY[2]]; blockSizes[2] = new uint[blockOffsets[2].Length];
             for (int i = 0; i < blockOffsets[2].Length; i++) {
                 blockOffsets[2][i] = reader.ReadUInt32();
-                blockSizes[2][i] = reader.ReadInt32();
+                blockSizes[2][i] = reader.ReadUInt32();
             }
 
-            blockOffsets[1] = new uint[blockCellsX[1] * blockCellsY[1]]; blockSizes[1] = new int[blockOffsets[1].Length];
+            blockOffsets[1] = new uint[blockCellsX[1] * blockCellsY[1]]; blockSizes[1] = new uint[blockOffsets[1].Length];
             for (int i = 0; i < blockOffsets[1].Length; i++) {
                 blockOffsets[1][i] = reader.ReadUInt32();
-                blockSizes[1][i] = reader.ReadInt32();
+                blockSizes[1][i] = reader.ReadUInt32();
             }
 
 
-            blockOffsets[0] = new uint[cellsX * cellsY]; blockSizes[0] = new int[blockOffsets[0].Length];
+            blockOffsets[0] = new uint[cellsX * cellsY]; blockSizes[0] = new uint[blockOffsets[0].Length];
             for (int i = 0; i < blockOffsets[0].Length; i++) {
                 blockOffsets[0][i] = reader.ReadUInt32();
-                blockSizes[0][i] = reader.ReadInt32();
+                blockSizes[0][i] = reader.ReadUInt32();
             }
 
             zlibOffset = reader.BaseStream.Position;
@@ -140,7 +140,7 @@ class BtdStarfield {
                 for (int cellX = 0; cellX < cellsX; cellX += blockCellCount) {
                     int zlibBlockIndex = (cellX / blockCellCount + cellY / blockCellCount * blockCellsX[level]);
                     reader.BaseStream.Seek(zlibOffset + blockOffsets[level][zlibBlockIndex], SeekOrigin.Begin);
-                    var status = decompressor.Decompress(reader.ReadBytes(blockSizes[level][zlibBlockIndex]), uncompressedBlockSize, out var decompressed);
+                    var status = decompressor.Decompress(reader.ReadBytes((int)blockSizes[level][zlibBlockIndex]), uncompressedBlockSize, out var decompressed);
                     if (status != OperationStatus.Done) {
                         Console.WriteLine(status);
                         continue;
@@ -176,7 +176,7 @@ class BtdStarfield {
                     for (int i = 0; i < blockOffsets[level].Length; i++) {
                         reader.BaseStream.Seek(zlibOffset + blockOffsets[level][i], SeekOrigin.Begin);
                         int testSize = 128 * 128 * 4;
-                        var status = decompressor.Decompress(reader.ReadBytes(blockSizes[level][i]), testSize, out var decompressed);
+                        var status = decompressor.Decompress(reader.ReadBytes((int)blockSizes[level][i]), testSize, out var decompressed);
                         if (status != OperationStatus.Done) {
                             Console.WriteLine(status);
                         } else {
@@ -198,6 +198,53 @@ class BtdStarfield {
         var span = MemoryMarshal.AsBytes(globalLtex.AsSpan());
         heights.Read(span, new MagickReadSettings() { Width = cellsX * 8, Height = cellsY * 8, Depth = 16, Format = MagickFormat.Gray });
         heights.Write("ltex.png");
+    }
+
+    public void Write(string path) {
+        using(BinaryWriter w = new BinaryWriter(File.Open(path, FileMode.Create))) {
+            w.Write(1111774274); //magic
+            w.Write(version);
+            w.Write(minHeight); w.Write(maxHeight);
+            w.Write(sizeX); w.Write(sizeY);
+            w.Write(minX); w.Write(minY); w.Write(maxX); w.Write(maxX); //these are all zero anyway, right?
+            w.Write(ltexIds.Length); for (int i = 0; i < ltexIds.Length; i++) { w.Write(ltexIds[i]); }
+            for(int i = 0; i < cellsX * cellsY; i++) {
+                w.Write(cellMinHeights[i]);
+                w.Write(cellMaxHeights[i]);
+            }
+            for (int i = 0; i < cellsX * cellsY * 4; i++) w.Write(quadrantLtexIds[i]);
+            for (int i = 0; i < globalHeights.Length; i++) w.Write(globalHeights[i]);
+            for (int i = 0; i < globalLtex.Length; i++) w.Write(globalLtex[i]);
+
+            long newOffsetOffset = w.BaseStream.Position;
+
+
+            int offsetCount = blockOffsets[3].Length + blockOffsets[2].Length + blockOffsets[1].Length + blockOffsets[0].Length;
+            List<uint> newOffsets = new List<uint>(offsetCount * 2);
+            w.Write(new byte[offsetCount * 8]);
+
+
+            long newZlibOffset = w.BaseStream.Position;
+
+            using(BinaryReader r = new BinaryReader(File.OpenRead(this.path))) {
+                for (int lod = 3; lod >= 0; lod--) {
+                    uint[] offsets = blockOffsets[lod];
+                    uint[] sizes = blockSizes[lod];
+                    for (int i = 0; i < offsets.Length; i++) {
+                        newOffsets.Add((uint)(w.BaseStream.Position - newZlibOffset));
+                        uint size = sizes[i];
+                        newOffsets.Add(size);
+                        r.BaseStream.Seek(zlibOffset + offsets[i], SeekOrigin.Begin);
+                        w.BaseStream.Write(r.ReadBytes((int)size));
+                    }
+                }
+            }
+
+            w.BaseStream.Seek(newOffsetOffset, SeekOrigin.Begin);
+            for(int i = 0; i < newOffsets.Count; i++) w.Write(newOffsets[i]);
+
+
+        }
     }
 
 }

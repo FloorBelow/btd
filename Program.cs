@@ -6,10 +6,35 @@ using System.Buffers;
 namespace BTD_Tests {
     internal class Program {
         static void Main(string[] args) {
+
+            BtdStarfield btd2 = new BtdStarfield(@"F:\Extracted\Starfield\terrain\craterssharplarge2k\craterssharplarge2k01.btd");
+            btd2.Write(Path.GetFileNameWithoutExtension(btd2.path) + "_edit.btd");
+
+            return;
+
+            foreach (string path in Directory.EnumerateFiles(@"F:\Extracted\Starfield\terrain", "*.btd", SearchOption.AllDirectories)) {
+                BtdStarfield btd = new BtdStarfield(path);
+                if (btd.minX != 0) Console.WriteLine(path + " MINX");
+                if (btd.minY != 0) Console.WriteLine(path + " MINY");
+                if (btd.maxX != 0) Console.WriteLine(path + " MAXX");
+                if (btd.maxY != 0) Console.WriteLine(path + " MAXY");
+                if (btd.ltexIds.Length != 0) Console.WriteLine(path + " LTEX");
+
+            }
+            return;
+
+
+            Biom biom = new Biom(@"E:\Extracted\Starfield\planetdata\biomemaps\volii beta.biom");
+            for(int i = 0; i < biom.hemispheres[0].unk1.Length; i++) { biom.hemispheres[0].unk1[i] = 0; }
+            for (int i = 0; i < biom.hemispheres[1].unk1.Length; i++) { biom.hemispheres[1].unk1[i] = 0; }
+            biom.ListResourceVals();
+            biom.Write();
+
+            /*
             foreach(string path in Directory.EnumerateFiles(@"E:\Extracted\Starfield\planetdata\biomemaps\", "*.biom")) {
                 //Biom biom = new Biom(@"E:\Extracted\Starfield\planetdata\biomemaps\nesoi.biom");
                 Biom biom = new Biom(path);
-                biom.SaveBiomeMap();
+                biom.SaveUnk1();
 
             }
             return;
@@ -18,6 +43,7 @@ namespace BTD_Tests {
                 BtdStarfield btd = new BtdStarfield(path);
                 btd.Export(0, BtdStarfield.TerrainMode.height, Path.GetFileName(path));
             }
+            */
 
             /*
             BtdStarfield btd = new BtdStarfield(@"F:\Extracted\Starfield\terrain\canyonssharplarge1k\canyonssharplarge1kinnercurve01.btd");
