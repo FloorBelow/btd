@@ -8,28 +8,49 @@ namespace BTD_Tests {
         static void Main(string[] args) {
 
 
+            //BtdStarfield btd2 = new BtdStarfield(@"F:\Extracted\Starfield\terrain\craterssharplarge2k\craterssharplarge2k01.btd");
+
+            //btd2.Write("a.btd");
+            //return;
+
+            // for (int i = 3; i >= 0; i--) btd2.Export(i, BtdStarfield.TerrainMode.ltex, "ltex");
+            //return;
+
+            MagickImage skyrimImage = new MagickImage(@"E:\Anna\Anna\Visual Studio\BTD_Tests\bin\Debug\net6.0\skyrim.png");
+            ushort[] skyrimHeights = new ushort[skyrimImage.Width * skyrimImage.Height];
+            {
+                int i = 0;
+                foreach(var pixel in skyrimImage.GetPixels()) {
+                    skyrimHeights[i] = pixel[0];
+                    i++;
+                }
+            }
+
+            //skyrimImage.Write(skyrimHeights, )
+
             int startLength = @"F:\Extracted\Starfield\".Length;
             foreach (string path in Directory.EnumerateFiles(@"F:\Extracted\Starfield\terrain", "*.btd", SearchOption.AllDirectories)) {
                 string filename = Path.GetFileName(path);
-                if (!filename.Contains("hillsrocky")  || (!filename.Contains("2k") && !filename.Contains("1k"))) continue; //
+                if (!filename.Contains("mountainssharp") || (!filename.Contains("2k"))) continue; //&& !filename.Contains("1k")
+                
 
                 BtdStarfield btd = new BtdStarfield(path);
+                if (btd.sizeX != 3328 || btd.sizeY != 3328) continue;
                 //btd.maxHeight =  btd.maxHeight / 4;
                 //btd.minHeight = btd.minHeight / 4;
 
+                //Console.WriteLine($"{Path.GetFileNameWithoutExtension(path)}|{btd.maxHeight - btd.minHeight}");
+
+                //continue;
                 string outPath = path.Substring(startLength);
                 if (!Directory.Exists(Path.GetDirectoryName(outPath))) Directory.CreateDirectory(Path.GetDirectoryName(outPath));
                 Console.WriteLine(outPath);
 
                 //File.Copy(@"F:\Extracted\Starfield\terrain\craterssharplarge2k\craterssharplarge2k01.btd", outPath, true);
-                btd.Write(outPath);
+                btd.Write(outPath, skyrimHeights, 0.6f);
 
 
             }
-            return;
-
-            BtdStarfield btd2 = new BtdStarfield(@"F:\Extracted\Starfield\terrain\craterssharplarge2k\craterssharplarge2k01.btd");
-            btd2.Export(0);
             return;
 
 
