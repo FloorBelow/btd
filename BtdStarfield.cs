@@ -1,6 +1,7 @@
 ﻿using ImageMagick;
 using LibDeflate;
 using System.Buffers;
+using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
 
 class BtdStarfield {
@@ -119,6 +120,17 @@ class BtdStarfield {
         ltex
     }
 
+    IMemoryOwner<byte> DecompressBlock(BinaryReader reader, Decompressor decompressor, int level, int block) {
+        reader.BaseStream.Seek(zlibOffset + blockOffsets[level][block], SeekOrigin.Begin);
+        var status = decompressor.Decompress(reader.ReadBytes((int)blockSizes[level][block]), uncompressedBlockSize, out var decompressed);
+        if (status != OperationStatus.Done) {
+            Console.WriteLine(status);
+            return null;
+        }
+        return decompressed;
+    }
+
+
     public void Export(int level, TerrainMode mode = TerrainMode.height, string name = "lod") {
         int cellSize = cellSizes[level];
         int blockCellCount = blockCellCounts[level];
@@ -139,12 +151,15 @@ class BtdStarfield {
             for (int cellY = 0; cellY < cellsY; cellY += blockCellCount) {
                 for (int cellX = 0; cellX < cellsX; cellX += blockCellCount) {
                     int zlibBlockIndex = (cellX / blockCellCount + cellY / blockCellCount * blockCellsX[level]);
+                    var decompressed = DecompressBlock(reader, decompressor, level, zlibBlockIndex);
+                    /*
                     reader.BaseStream.Seek(zlibOffset + blockOffsets[level][zlibBlockIndex], SeekOrigin.Begin);
                     var status = decompressor.Decompress(reader.ReadBytes((int)blockSizes[level][zlibBlockIndex]), uncompressedBlockSize, out var decompressed);
                     if (status != OperationStatus.Done) {
                         Console.WriteLine(status);
                         continue;
                     }
+                    */
                     Span<ushort> blockShorts = MemoryMarshal.Cast<byte, ushort>(decompressed.Memory.Span);
                     int blockWidth = cellX + blockCellCount > cellsX ? (cellsX % blockCellCount) * cellSize : blockSize;
                     int blockHeight = cellY + blockCellCount > cellsY ? (cellsY % blockCellCount) * cellSize : blockSize;
@@ -226,16 +241,30 @@ class BtdStarfield {
 
             long newZlibOffset = w.BaseStream.Position;
 
-            using(BinaryReader r = new BinaryReader(File.OpenRead(this.path))) {
-                for (int lod = 3; lod >= 0; lod--) {
-                    uint[] offsets = blockOffsets[lod];
-                    uint[] sizes = blockSizes[lod];
-                    for (int i = 0; i < offsets.Length; i++) {
-                        newOffsets.Add((uint)(w.BaseStream.Position - newZlibOffset));
-                        uint size = sizes[i];
-                        newOffsets.Add(size);
-                        r.BaseStream.Seek(zlibOffset + offsets[i], SeekOrigin.Begin);
-                        w.BaseStream.Write(r.ReadBytes((int)size));
+            using (Decompressor decompressor = new ZlibDecompressor()) {
+                using(Compressor compressor = new ZlibCompressor(5)) {
+                    using (BinaryReader r = new BinaryReader(File.OpenRead(this.path))) {
+                        for (int lod = 3; lod >= 0; lod--) {
+                            uint[] offsets = blockOffsets[lod];
+                            uint[] sizes = blockSizes[lod];
+                            for (int i = 0; i < offsets.Length; i++) {
+
+                                newOffsets.Add((uint)(w.BaseStream.Position - newZlibOffset));
+
+                                r.BaseStream.Seek(zlibOffset + offsets[i], SeekOrigin.Begin);
+                                var decompressed = DecompressBlock(r, decompressor, lod, i);
+                                
+                                var uintSpan = MemoryMarshal.Cast<byte, ushort>(decompressed.Memory.Span);
+                                for (int b = 0; b < 128 * 128; b++) uintSpan[b] = 0;
+
+                                var recompressed = compressor.Compress(decompressed.Memory.Span);
+                                uint size = (uint)recompressed.Memory.Length;
+
+
+                                newOffsets.Add(size);
+                                w.BaseStream.Write(recompressed.Memory.Span);
+                            }
+                        }
                     }
                 }
             }

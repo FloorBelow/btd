@@ -7,12 +7,13 @@ namespace BTD_Tests {
     internal class Program {
         static void Main(string[] args) {
 
+
             int startLength = @"F:\Extracted\Starfield\".Length;
             foreach (string path in Directory.EnumerateFiles(@"F:\Extracted\Starfield\terrain", "*.btd", SearchOption.AllDirectories)) {
                 string filename = Path.GetFileName(path);
-                if (!filename.Contains("hillsrocky")  || (!filename.Contains("2k"))) continue; //&& !filename.Contains("1k")
+                if (!filename.Contains("hillsrocky")  || (!filename.Contains("2k") && !filename.Contains("1k"))) continue; //
 
-                //BtdStarfield btd = new BtdStarfield(path);
+                BtdStarfield btd = new BtdStarfield(path);
                 //btd.maxHeight =  btd.maxHeight / 4;
                 //btd.minHeight = btd.minHeight / 4;
 
@@ -20,20 +21,16 @@ namespace BTD_Tests {
                 if (!Directory.Exists(Path.GetDirectoryName(outPath))) Directory.CreateDirectory(Path.GetDirectoryName(outPath));
                 Console.WriteLine(outPath);
 
-                File.Copy(@"F:\Extracted\Starfield\terrain\craterssharplarge2k\craterssharplarge2k01.btd", outPath, true);
-                //btd.Write(outPath);
+                //File.Copy(@"F:\Extracted\Starfield\terrain\craterssharplarge2k\craterssharplarge2k01.btd", outPath, true);
+                btd.Write(outPath);
 
 
             }
             return;
 
-
-
             BtdStarfield btd2 = new BtdStarfield(@"F:\Extracted\Starfield\terrain\craterssharplarge2k\craterssharplarge2k01.btd");
-            btd2.Write(Path.GetFileNameWithoutExtension(btd2.path) + "_edit.btd");
-
+            btd2.Export(0);
             return;
-
 
 
             Biom biom = new Biom(@"E:\Extracted\Starfield\planetdata\biomemaps\volii beta.biom");
