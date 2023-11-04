@@ -7,6 +7,7 @@ namespace BTD_Tests {
     internal class Program {
         static void Main(string[] args) {
 
+            Esm.TestSFTR(); return;
 
             //BtdStarfield btd2 = new BtdStarfield(@"F:\Extracted\Starfield\terrain\craterssharplarge2k\craterssharplarge2k01.btd");
 
